@@ -65,6 +65,8 @@ a `html` key is provided.).
 
 If the body contains a `html` key, then that key will be used as the HTML message body in Matrix (aka `formatted_body`). A `text` key fallback MUST still be provided.
 
+If the body contains a `raw` key, this will be sent as the Matrix event content.
+
 If the body *also* contains a `username` key, then the message will be prepended by the given username. This will be prepended to both `text` and `html`.
 
 If the body does NOT contain a `text` field, the full JSON payload will be sent to the room. This can be adapted into a message by creating a **JavaScript transformation function**.

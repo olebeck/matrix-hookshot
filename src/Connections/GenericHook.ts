@@ -3,13 +3,14 @@ import LogWrapper from "../LogWrapper";
 import { MessageSenderClient } from "../MatrixSender"
 import markdownit from "markdown-it";
 import { VMScript as Script, NodeVM } from "vm2";
-import { MatrixEvent } from "../MatrixEvent";
+import { MatrixEvent, MatrixEventContent } from "../MatrixEvent";
 import { Appservice, StateEvent } from "matrix-bot-sdk";
 import { v4 as uuid} from "uuid";
 import { ApiError, ErrCode } from "../api";
 import { BaseConnection } from "./BaseConnection";
 import { GetConnectionsResponseItem } from "../provisioning/api";
 import { BridgeConfigGenericWebhooks } from "../Config/Config";
+import { UploadWebhookEvent } from "../generic/types";
 
 export interface GenericHookConnectionState extends IConnectionState {
     /**
@@ -228,9 +229,9 @@ export class GenericHookConnection extends BaseConnection implements IConnection
         this.state = validatedConfig;
     }
 
-    public transformHookData(data: unknown): {plain: string, html?: string} {
+    public transformHookData(data: unknown): {plain: string, html?: string, raw?: MatrixEventContent} {
         // Supported parameters https://developers.mattermost.com/integrate/incoming-webhooks/#parameters
-        const msg: {plain: string, html?: string} = {plain: ""};
+        const msg: {plain: string, html?: string, raw?: MatrixEventContent} = {plain: ""};
         const safeData = typeof data === "object" && data !== null ? data as Record<string, unknown> : undefined;
         if (typeof data === "string") {
             return {plain: `Received webhook data: ${data}`};
@@ -252,6 +253,8 @@ export class GenericHookConnection extends BaseConnection implements IConnection
                 msg.html = `<strong>${safeData.username}</strong>: ${msg.html}`;
             }
         }
+
+        msg.raw = <MatrixEventContent|undefined>safeData?.raw;
         // TODO: Transform Slackdown into markdown.
         return msg;
     }
@@ -312,7 +315,7 @@ export class GenericHookConnection extends BaseConnection implements IConnection
      */
     public async onGenericHook(data: unknown): Promise<boolean> {
         log.info(`onGenericHook ${this.roomId} ${this.hookId}`);
-        let content: {plain: string, html?: string, msgtype?: string};
+        let content: {plain: string, html?: string, msgtype?: string, raw?: MatrixEventContent};
         let success = true;
         if (!this.transformationFunction) {
             content = this.transformHookData(data);
@@ -334,15 +337,33 @@ export class GenericHookConnection extends BaseConnection implements IConnection
         const sender = this.getUserId();
         await this.ensureDisplayname();
 
-        await this.messageClient.sendMatrixMessage(this.roomId, {
+        let eventContent = content.raw || {
             msgtype: content.msgtype || "m.notice",
             body: content.plain,
             formatted_body: content.html || md.renderInline(content.plain),
             format: "org.matrix.custom.html",
             "uk.half-shot.hookshot.webhook_data": data,
-        }, 'm.room.message', sender);
+        };
+
+        await this.messageClient.sendMatrixMessage(this.roomId, eventContent, 'm.room.message', sender);
         return success;
 
+    }
+
+    public async onUpload(data: UploadWebhookEvent): Promise<string|null> {
+        const sender = this.getUserId();
+        await this.ensureDisplayname();
+
+        const intent = sender ? this.as.getIntentForUserId(sender) : this.as.botIntent;
+        await intent.ensureRegisteredAndJoined(this.roomId);
+        try {
+            const mxc: string = await intent.underlyingClient.uploadContent(data.data, "application/octet", data.filename);
+            log.info(`uploaded ${this.roomId} (${sender}) > ${mxc}`);
+            return mxc;
+        } catch (ex) {
+            log.error(ex);
+            return null;
+        }
     }
 
     public static getProvisionerDetails(botUserId: string) {

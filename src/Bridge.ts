@@ -38,7 +38,7 @@ import { ListenerService } from "./ListenerService";
 import { SetupConnection } from "./Connections/SetupConnection";
 import { getAppservice } from "./appservice";
 import { JiraOAuthRequestCloud, JiraOAuthRequestOnPrem, JiraOAuthRequestResult } from "./Jira/OAuth";
-import { GenericWebhookEvent, GenericWebhookEventResult } from "./generic/types";
+import { GenericWebhookEvent, GenericWebhookEventResult, UploadWebhookEvent, UploadWebhookEventResult } from "./generic/types";
 import { SetupWidget } from "./Widgets/SetupWidget";
 import { FeedEntry, FeedError, FeedReader } from "./feeds/FeedReader";
 const log = new LogWrapper("Bridge");
@@ -593,6 +593,60 @@ export class Bridge {
                     sender: "Bridge",
                     messageId,
                     eventName: "response.generic-webhook.event",
+                });
+            }
+        });
+
+        this.queue.on<UploadWebhookEvent>("upload-webhook.event", async (msg) => {
+            const {data, messageId} = msg;
+            const connections = connManager.getConnectionsForGenericWebhook(data.hookId);
+            log.debug(`upload-webhook.event for ${connections.map(c => c.toString()).join(', ') || '[empty]'}`);
+
+            if (!connections.length) {
+                await this.queue.push<UploadWebhookEventResult>({
+                    data: {notFound: true},
+                    sender: "Bridge",
+                    messageId: messageId,
+                    eventName: "response.upload-webhook.event",
+                });
+            }
+
+            let didPush = false;
+            let mxc: string|null = null;
+            await Promise.all(connections.map(async (c, index) => {
+                try {
+                    // TODO: Support webhook responses to more than one room
+                    if (index !== 0) {
+                        mxc = await c.onUpload(data);
+                        return;
+                    }
+                    mxc = await c.onUpload(data);
+                    await this.queue.push<UploadWebhookEventResult>({
+                        data: {mxc},
+                        sender: "Bridge",
+                        messageId,
+                        eventName: "response.upload-webhook.event",
+                    });
+                    didPush = true;
+                }
+                catch (ex) {
+                    log.warn(`Failed to handle upload webhook`, ex);
+                    Metrics.connectionsEventFailed.inc({
+                        event: "upload-webhook.event",
+                        connectionId: c.connectionId
+                    });
+                }
+            }));
+
+            // We didn't manage to complete sending the event or even sending a failure.
+            if (!didPush) {
+                await this.queue.push<UploadWebhookEventResult>({
+                    data: {
+                        mxc: null
+                    },
+                    sender: "Bridge",
+                    messageId,
+                    eventName: "response.upload-webhook.event",
                 });
             }
         });
