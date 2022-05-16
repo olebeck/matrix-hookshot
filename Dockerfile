@@ -11,23 +11,30 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # See https://github.com/matrix-org/matrix-rust-sdk-bindings/blob/main/crates/matrix-sdk-crypto-nodejs/release/Dockerfile.linux#L5-L6
 RUN apt-get update && apt-get install -y build-essential cmake
 
-COPY . /src
 WORKDIR /src
+COPY package.json .
+COPY yarn.lock .
+COPY scripts/build-bindings.sh ./scripts/
 
 # Workaround: Need to install esbuild manually https://github.com/evanw/esbuild/issues/462#issuecomment-771328459
 RUN yarn --ignore-scripts
 RUN node node_modules/esbuild/install.js
+
+RUN ./scripts/build-bindings.sh
+
+COPY . .
+
 RUN yarn build --pure-lockfile
 
 
 # Stage 1: The actual container
 FROM node:16-slim
 
-COPY --from=builder /src/lib/ /bin/matrix-hookshot/
-COPY --from=builder /src/public/ /bin/matrix-hookshot/public/
-COPY --from=builder /src/package.json /bin/matrix-hookshot/
-COPY --from=builder /src/yarn.lock /bin/matrix-hookshot/
 WORKDIR /bin/matrix-hookshot
+COPY --from=builder /src/lib/ .
+COPY --from=builder /src/public/ .
+COPY --from=builder /src/package.json .
+COPY --from=builder /src/yarn.lock .
 
 # --ignore-scripts so we don't try to build
 RUN yarn --ignore-scripts --production --pure-lockfile && yarn cache clean

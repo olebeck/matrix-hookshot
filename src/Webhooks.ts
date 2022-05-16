@@ -14,6 +14,7 @@ import { GitHubOAuthTokenResponse } from "./Github/Types";
 import Metrics from "./Metrics";
 import { FigmaWebhooksRouter } from "./figma/router";
 import { GenericWebhooksRouter } from "./generic/Router";
+import { DiscordWebhooksRouter } from "./discord/Router";
 
 const log = new LogWrapper("Webhooks");
 
@@ -62,6 +63,7 @@ export class Webhooks extends EventEmitter {
         }
         if (this.config.generic) {
             this.expressRouter.use('/webhook', new GenericWebhooksRouter(this.queue).getRouter());
+            this.expressRouter.use('/discord', new DiscordWebhooksRouter(this.queue).getRouter());
             // TODO: Remove old deprecated endpoint
             this.expressRouter.use(new GenericWebhooksRouter(this.queue, true).getRouter());
         }
