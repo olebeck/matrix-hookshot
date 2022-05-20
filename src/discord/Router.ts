@@ -45,7 +45,6 @@ export class DiscordWebhooksRouter {
 
         if(req.files) {
             for (const file of <Express.Multer.File[]>req.files) {
-                if(!file.fieldname.match(/file\d+/)) continue
                 // upload the file to the homeserver and send to the channel
                 const uploadResponse = await this.uploadFile(file.originalname, file.buffer, req.params.hookId);
                 if(uploadResponse.notFound) {
