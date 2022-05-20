@@ -64,7 +64,7 @@ export class DiscordWebhooksRouter {
                         url: uploadResponse.mxc,
                     }
                 }, req.params.hookId);
-                if(!sendResponse.successful) {
+                if(sendResponse.successful === false) {
                     res.status(500).send({ok: false, error: "failed to send file"});
                     return;
                 }
@@ -87,7 +87,7 @@ export class DiscordWebhooksRouter {
                     res.status(404).send({ok: false, error: "Webhook not found"});
                     return;
                 }
-                if(!response.successful) {
+                if(response.successful === false) {
                     res.status(500).send({ok: false, error: "error sending webhook"});
                     return;
                 }
